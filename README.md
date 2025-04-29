@@ -20,9 +20,10 @@ This script transcribes audio files into text using the Whisper model. The comma
 | --- | --- | ---| --- |
 | `-m`, `--model` | string | The Whisper model name. | `base` |
 | `-t`, `--transcript-dir` | string | Specifies the directory to save the transcription files. If not provided, transcript files will be saved next to the audio file. If the flag is provided without an argument, transcripts will be saved in a folder named transcripts under the current directory. | `./transcripts` |
-| `--include-timestamps` | boolean | Whether to include timestamps in the transcribed text files | `False` |
+| `--include-timestamps` | boolean | Whether to include timestamps in the transcribed text files. | `False` |
 | `-v`, `--verbose` | int | Controls the level of verbosity for the transcription process. No flag: No progress bar. One -v: Small progress display. Two -vs (e.g., -vv): Logs the audio transcripts to the console. | `0` |
 | `--ignore-existing` | bool | If set to True, transcription will skip files that already have an existing transcript. | `True` |
+| `--log-level` | Choice of `DEBUG`, `INFO`, `WARNING`, `ERROR` | Changes the logging level of the script. | `INFO` | 
 
 ### Required
 

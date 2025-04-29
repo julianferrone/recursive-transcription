@@ -68,7 +68,6 @@ structlog.configure(
         structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S", utc=False),
         structlog.dev.ConsoleRenderer(),
     ],
-    wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
     context_class=dict,
     logger_factory=structlog.PrintLoggerFactory(),
     cache_logger_on_first_use=False,
@@ -306,7 +305,7 @@ def existing_paths(
         - If it does not exist, a warning is logged and it is skipped.
 
     Args:
-        paths (Iterable[Path]): A collection of file or directory paths to 
+        paths (Iterable[Path]): A collection of file or directory paths to
         check.
 
     Yields:
@@ -595,6 +594,8 @@ def format_timestamp(seconds: float) -> str:
     """
     hours, remaining_seconds = divmod(seconds, SECONDS_PER_HOUR)
     minutes, remaining_seconds = divmod(remaining_seconds, SECONDS_PER_MINUTE)
+    hours = int(hours)
+    minutes = int(minutes)
     return f"{hours:02d}:{minutes:02d}:{remaining_seconds:06.3f}"
 
 
@@ -792,6 +793,12 @@ def setup_argparser() -> argparse.ArgumentParser:
         help="Ignore already existing transcription files",
     )
     parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Set the logger level",
+    )
+    parser.add_argument(
         "paths",
         nargs="+",
         help="""The list of paths to directories (to transcribe all descendant
@@ -825,6 +832,10 @@ def main():
     """
     # Get CLI arguments
     args = setup_argparser().parse_args()
+    log_level = getattr(logging, args.log_level)
+    structlog.configure(
+        wrapper_class=structlog.make_filtering_bound_logger(log_level),
+    )
     transcript_dir = args.transcript_dir
     include_timestamps = args.include_timestamps
     store_in_subfolders = transcript_dir == None
