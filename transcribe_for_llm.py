@@ -1,5 +1,5 @@
 """
-This script provides functionality for transcribing audio files into text 
+This script provides functionality for transcribing audio files into text
 using the Whisper model.
 
 It includes the following core features:
@@ -7,7 +7,7 @@ It includes the following core features:
 1. **Audio File Handling**:
    - Traverse directories recursively to find audio files (e.g., .mp3, .mp4).
    - Filter audio files that have not been processed or failed previously.
-   
+
 2. **Transcription**:
    - Use OpenAI's Whisper model to transcribe audio files into text.
    - Optionally include timestamps in the transcriptions.
@@ -22,25 +22,25 @@ It includes the following core features:
    - Handle the creation of necessary directories for transcription files.
 
 5. **Command-Line Interface (CLI)**:
-   - Provide a command-line interface for users to specify input paths, 
+   - Provide a command-line interface for users to specify input paths,
      transcription settings, and model options.
-   - Support verbose mode for displaying progress and including timestamps 
+   - Support verbose mode for displaying progress and including timestamps
      in the transcriptions.
 
-The module is designed to be flexible and efficient, enabling batch 
+The module is designed to be flexible and efficient, enabling batch
 transcription of audio files with the ability to resume interrupted processes.
 
 Usage:
-    To use the module, run the script with command-line arguments specifying 
+    To use the module, run the script with command-line arguments specifying
     paths to the audio files or directories, transcription settings, and the Whisper model.
 
     Example:
         python transcribe.py -m base --verbose --ignore-existing /path/to/audio/files
 
 Requirements:
-    - `Whisper`: The OpenAI speech recognition model library. Install with 
+    - `Whisper`: The OpenAI speech recognition model library. Install with
       `pip install -U openai-whisper`
-    - `structlog`: Structured logging library. Install with 
+    - `structlog`: Structured logging library. Install with
       `pip install structlog`
 """
 
@@ -55,12 +55,7 @@ import typing
 import warnings
 
 import structlog
-from structlog.contextvars import (
-    bind_contextvars,
-    bound_contextvars,
-    clear_contextvars,
-    unbind_contextvars,
-)
+from structlog.contextvars import bound_contextvars
 import whisper
 
 
@@ -761,23 +756,21 @@ def main():
     current_failed = set()
     # Transcribe media files
     for count, media_file in zip(countdown(count=5), unprocessed):
-        clear_contextvars()
-        bind_contextvars(audio_input=media_file.audio_input)
-        transcript = transcribe_audio(
-            model=model,
-            media_file=media_file,
-            include_timestamps=include_timestamps,
-            verbose=verbose,
-        )
-        if isinstance(transcript, TranscriptionOk):
-            current_processed.add(media_file.audio_input)
-            write_transcription(
-                transcription=transcript.transcription,
+        with bound_contextvars(audio_input=media_file.audio_input):
+            transcript = transcribe_audio(
+                model=model,
                 media_file=media_file,
+                include_timestamps=include_timestamps,
+                verbose=verbose,
             )
-        elif isinstance(transcript, TranscriptionErr):
-            current_failed.add(media_file.audio_input)
-        unbind_contextvars("audio_input")
+            if isinstance(transcript, TranscriptionOk):
+                current_processed.add(media_file.audio_input)
+                write_transcription(
+                    transcription=transcript.transcription,
+                    media_file=media_file,
+                )
+            elif isinstance(transcript, TranscriptionErr):
+                current_failed.add(media_file.audio_input)
         if count == 0:
             state = update_state(
                 state=state,
@@ -785,8 +778,14 @@ def main():
                 failed=current_failed,
             )
             save_state(state_path=STATE_PATH, state=state)
-    LOGGER.info("Processed files count", processed_count=len(current_processed))
-    LOGGER.info("Failed files count", failed_count=len(current_failed))
+    LOGGER.info(
+        "Processed files count",
+        processed_count=len(current_processed),
+    )
+    LOGGER.info(
+        "Failed files count",
+        failed_count=len(current_failed),
+    )
     # Save state
     state = update_state(
         state=state,
@@ -794,8 +793,14 @@ def main():
         failed=current_failed,
     )
     save_state(state_path=STATE_PATH, state=state)
-    LOGGER.info("Total processed files count", processed_count=len(state.processed))
-    LOGGER.info("Total failed files count", failed_count=len(state.failed))
+    LOGGER.info(
+        "Total processed files count",
+        processed_count=len(state.processed),
+    )
+    LOGGER.info(
+        "Total failed files count",
+        failed_count=len(state.failed),
+    )
     LOGGER.info("Finished processing")
 
 
