@@ -68,7 +68,7 @@ structlog.configure(
         structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S", utc=False),
         structlog.dev.ConsoleRenderer(),
     ],
-    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+    wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
     context_class=dict,
     logger_factory=structlog.PrintLoggerFactory(),
     cache_logger_on_first_use=False,
@@ -292,6 +292,32 @@ def countdown(count: int):
 # _______________ File / Directory Operations ______________
 
 # ----------------- Retrieving Input Files -----------------
+
+
+def existing_paths(
+    paths: typing.Iterable[Path],
+) -> typing.Generator[Path, None, None]:
+    """
+    Filters an iterable of paths, yielding only those that exist on the
+    filesystem.
+
+    For each path:
+        - If it exists, it is yielded and a debug log is recorded.
+        - If it does not exist, a warning is logged and it is skipped.
+
+    Args:
+        paths (Iterable[Path]): A collection of file or directory paths to 
+        check.
+
+    Yields:
+        Path: Each path that exists.
+    """
+    for path in paths:
+        if path.exists():
+            LOGGER.debug("Path exists, will process", path=path)
+            yield path
+        else:
+            LOGGER.warning("Path doesn't exist, won't process", path=path)
 
 
 def descendants(ancestor: Path) -> typing.Generator[Path, None, None]:
@@ -547,11 +573,29 @@ TranscriptionResult = TranscriptionOk | TranscriptionErr
 
 # ................ Transcription Formatting ................
 
+SECONDS_PER_MINUTE = 60
+SECONDS_PER_HOUR = 60 * SECONDS_PER_MINUTE
+
 
 def format_timestamp(seconds: float) -> str:
-    minutes = int(seconds // 60)
-    remainder_seconds = seconds % 60
-    return f"{minutes:02d}:{remainder_seconds:06.3f}"
+    """
+    Converts a time duration in seconds into a formatted timestamp string.
+
+    The output is in the format `HH:MM:SS.sss`, where:
+        - `HH` is hours, zero-padded to 2 digits,
+        - `MM` is minutes, zero-padded to 2 digits,
+        - `SS.sss` is seconds with 3 decimal places, zero-padded to at least
+            6 characters.
+
+    Args:
+        seconds (float): The time duration in seconds.
+
+    Returns:
+        str: The formatted timestamp string.
+    """
+    hours, remaining_seconds = divmod(seconds, SECONDS_PER_HOUR)
+    minutes, remaining_seconds = divmod(remaining_seconds, SECONDS_PER_MINUTE)
+    return f"{hours:02d}:{minutes:02d}:{remaining_seconds:06.3f}"
 
 
 # .............. Transcribing Audio From File ..............
@@ -585,7 +629,7 @@ def transcribe_audio(
             verbose=verbose,
         )
     except FileNotFoundError as err:
-        LOGGER.info("Failed to transcribe media file", err=err)
+        LOGGER.warning("Failed to transcribe media file", err=err)
         return TranscriptionErr(reason=err)
 
     text = result["text"]
@@ -792,6 +836,7 @@ def main():
     elif args.verbose >= 2:
         verbose = True
     paths = [Path(path) for path in args.paths]
+    paths = existing_paths(paths=paths)
 
     LOGGER.debug(
         "Starting main",
@@ -809,28 +854,23 @@ def main():
     # Get all media files
 
     if store_in_subfolders:
-        media_files = itertools.chain.from_iterable(
-            [
-                media_files_to_origin_dir(
-                    folder_path=path,
-                    ignore_existing=ignore_existing,
-                )
-                for path in paths
-                if path.exists()
-            ]
-        )
+        all_media_files = [
+            media_files_to_origin_dir(
+                folder_path=path,
+                ignore_existing=ignore_existing,
+            )
+            for path in paths
+        ]
     else:
-        media_files = media_files = itertools.chain.from_iterable(
-            [
-                media_files_to_transcripts_dir(
-                    folder_path=path,
-                    transcripts_dir=transcript_dir,
-                    ignore_existing=ignore_existing,
-                )
-                for path in paths
-                if path.exists()
-            ]
-        )
+        all_media_files = [
+            media_files_to_transcripts_dir(
+                folder_path=path,
+                transcripts_dir=transcript_dir,
+                ignore_existing=ignore_existing,
+            )
+            for path in paths
+        ]
+    media_files = itertools.chain.from_iterable(all_media_files)
 
     transcribe = (
         transcribe_audio_timestamped if include_timestamps else transcribe_audio
