@@ -243,7 +243,6 @@ def save_state(
 
 def create_transcripts_structure(
     folder_path: Path,
-    same_folder: bool = False,
 ):
     """
     Create a new transcripts folder structure or reuse the input folder.
@@ -256,8 +255,6 @@ def create_transcripts_structure(
     Returns:
         Path: The path to the transcripts folder.
     """
-    if same_folder:
-        return folder_path
     transcripts_dir = folder_path.parent / f"{folder_path.name}_transcripts"
     if not transcripts_dir.exists():
         transcripts_dir.mkdir(parents=True, exist_ok=True)
@@ -442,24 +439,18 @@ def media_file_in_subfolder(audio_file: Path) -> MediaFile:
     )
 
 
-def get_media_files(
+def media_files_to_origin_dir(
     folder_path: Path,
-    transcripts_dir: Path,
-    ignore_existing: bool = False,
-    store_in_subfolders: bool = True,
+    ignore_existing: bool,
 ) -> typing.Generator[MediaFile, None, None]:
     """
-    Discover all audio files and generate MediaFile objects.
+    Discover all audio files and generate MediaFile objects that will be
+    stored in the same directory as the original audio file.
 
     Args:
         folder_path (Path): Path to the folder containing audio files.
-        transcripts_path (Path): Directory to store transcript files
-            (used if store_in_subfolders is False).
-        ignore_existing (bool, optional): Whether to skip files with existing
-            transcripts. Defaults to False.
-        store_in_subfolders (bool, optional): Whether to store transcripts in
-            the same folders as audio files.If False, all transcripts are
-            stored in `transcripts_path`. Defaults to True.
+        ignore_existing (bool): Whether to skip files with existing
+            transcripts.
 
     Yields:
         MediaFile: Each MediaFile corresponding to a discovered audio file.
@@ -468,12 +459,47 @@ def get_media_files(
     audio_files = filter_audio_files(files=files)
 
     for audio_file in audio_files:
-        media_file = (
-            media_file_in_subfolder(audio_file=audio_file)
-            if store_in_subfolders
-            else media_file_in_transcript_dir(
-                audio_file=audio_file, transcripts_dir=transcripts_dir
+        media_file = media_file_in_subfolder(audio_file=audio_file)
+
+        transcription_output = media_file.transcription_output
+        if ignore_existing and transcription_output.exists():
+            LOGGER.info(
+                f"Skipping audio file, transcript already exists",
+                audio_input=audio_file,
+                transcription_output=transcription_output,
             )
+            continue
+
+        yield media_file
+
+
+def media_files_to_transcripts_dir(
+    folder_path: Path,
+    transcripts_dir: Path,
+    ignore_existing: bool,
+) -> typing.Generator[MediaFile, None, None]:
+    """
+    Discover all audio files and generate MediaFile objects.
+
+    Args:
+        folder_path (Path): Path to the folder containing audio files.
+        transcripts_path (Path): Directory to store transcript files
+            (used if store_in_subfolders is False).
+        ignore_existing (bool): Whether to skip files with existing
+            transcripts.
+        store_in_subfolders (bool): Whether to store transcripts in
+            the same folders as audio files.If False, all transcripts are
+            stored in `transcripts_path`.
+
+    Yields:
+        MediaFile: Each MediaFile corresponding to a discovered audio file.
+    """
+    files = descendants(ancestor=folder_path)
+    audio_files = filter_audio_files(files=files)
+
+    for audio_file in audio_files:
+        media_file = media_file_in_transcript_dir(
+            audio_file=audio_file, transcripts_dir=transcripts_dir
         )
 
         transcription_output = media_file.transcription_output
@@ -688,8 +714,8 @@ def setup_argparser() -> argparse.ArgumentParser:
         "-t",
         "--transcript-dir",
         nargs="?",
-        const=None,
-        default=CURRENT_DIR / "transcripts",
+        const=CURRENT_DIR / "transcripts",
+        default=None,
         help="""The directory to save transcripts under. If this flag is not
             set, transcript files will be saved next to the audio file inputs.
             If this flag is provided without an argument, defaults to a folder
@@ -767,23 +793,44 @@ def main():
         verbose = True
     paths = [Path(path) for path in args.paths]
 
+    LOGGER.debug(
+        "Starting main",
+        transcript_dir=transcript_dir,
+        include_timestamps=include_timestamps,
+        store_in_subfolders=store_in_subfolders,
+        ignore_existing=ignore_existing,
+        verbose=verbose,
+    )
+
     # Load state and Whisper model
     model = whisper.load_model(args.model)
     state = load_state(state_path=STATE_PATH)
 
     # Get all media files
-    media_files = itertools.chain.from_iterable(
-        [
-            get_media_files(
-                folder_path=path,
-                transcripts_dir=transcript_dir,
-                ignore_existing=ignore_existing,
-                store_in_subfolders=store_in_subfolders,
-            )
-            for path in paths
-            if path.exists()
-        ]
-    )
+
+    if store_in_subfolders:
+        media_files = itertools.chain.from_iterable(
+            [
+                media_files_to_origin_dir(
+                    folder_path=path,
+                    ignore_existing=ignore_existing,
+                )
+                for path in paths
+                if path.exists()
+            ]
+        )
+    else:
+        media_files = media_files = itertools.chain.from_iterable(
+            [
+                media_files_to_transcripts_dir(
+                    folder_path=path,
+                    transcripts_dir=transcript_dir,
+                    ignore_existing=ignore_existing,
+                )
+                for path in paths
+                if path.exists()
+            ]
+        )
 
     transcribe = (
         transcribe_audio_timestamped if include_timestamps else transcribe_audio
