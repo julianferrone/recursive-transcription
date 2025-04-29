@@ -887,10 +887,13 @@ def main():
         transcribe_audio_timestamped if include_timestamps else transcribe_audio
     )
 
-    unprocessed = filter_processed_media_files(
-        state=state,
-        media_files=media_files,
+    unprocessed = list(
+        filter_processed_media_files(
+            state=state,
+            media_files=media_files,
+        )
     )
+    LOGGER.info("Collected media files to process", count=len(unprocessed))
 
     current_processed = set()
     current_failed = set()
