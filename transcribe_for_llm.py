@@ -32,7 +32,8 @@ transcription of audio files with the ability to resume interrupted processes.
 
 Usage:
     To use the module, run the script with command-line arguments specifying
-    paths to the audio files or directories, transcription settings, and the Whisper model.
+    paths to the audio files or directories, transcription settings, and the
+    Whisper model.
 
     Example:
         python transcribe.py -m base --verbose --ignore-existing /path/to/audio/files
@@ -58,7 +59,6 @@ import structlog
 from structlog.contextvars import bound_contextvars
 import whisper
 
-
 structlog.configure(
     processors=[
         structlog.contextvars.merge_contextvars,
@@ -68,7 +68,7 @@ structlog.configure(
         structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S", utc=False),
         structlog.dev.ConsoleRenderer(),
     ],
-    wrapper_class=structlog.make_filtering_bound_logger(logging.NOTSET),
+    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
     context_class=dict,
     logger_factory=structlog.PrintLoggerFactory(),
     cache_logger_on_first_use=False,
@@ -243,7 +243,7 @@ def save_state(
 
 def create_transcripts_structure(
     folder_path: Path,
-    same_folder=False,
+    same_folder: bool = False,
 ):
     """
     Create a new transcripts folder structure or reuse the input folder.
@@ -445,8 +445,8 @@ def media_file_in_subfolder(audio_file: Path) -> MediaFile:
 def get_media_files(
     folder_path: Path,
     transcripts_dir: Path,
-    ignore_existing=False,
-    store_in_subfolders=True,
+    ignore_existing: bool = False,
+    store_in_subfolders: bool = True,
 ) -> typing.Generator[MediaFile, None, None]:
     """
     Discover all audio files and generate MediaFile objects.
@@ -534,7 +534,6 @@ def format_timestamp(seconds: float) -> str:
 def transcribe_audio(
     model: whisper.Whisper,
     media_file: MediaFile,
-    include_timestamps: bool,
     verbose: typing.Optional[bool],
 ) -> TranscriptionResult:
     """
@@ -545,8 +544,6 @@ def transcribe_audio(
             transcription.
         media_file (MediaFile): The media file containing the audio input and
             target output path.
-        include_timestamps (bool): Whether to include timestamps in the
-            transcription.
         verbose (Optional[bool]): Whether to show detailed output during
             transcription.
 
@@ -565,22 +562,63 @@ def transcribe_audio(
         LOGGER.info("Failed to transcribe media file", err=err)
         return TranscriptionErr(reason=err)
 
-    if not include_timestamps:
-        text = result["text"]
-        transcription = text.replace(". ", ".\n\n")
-        LOGGER.info("Successfully transcribed media file")
-        return TranscriptionOk(transcription=transcription)
+    text = result["text"]
+    transcription = text.replace(". ", ".\n\n")
+    LOGGER.info("Successfully transcribed media file")
+    return TranscriptionOk(transcription=transcription)
 
-    def process_segment(segment: dict[str, str]) -> str:
-        start = segment["start"]
-        end = segment["end"]
-        text = segment["text"].strip()
-        start_time = format_timestamp(start)
-        end_time = format_timestamp(end)
-        return f"[{start_time} --> {end_time}]  {text}"
+
+def format_segment(segment: dict[str, str]) -> str:
+    """Formats a transcription timestamped segment into a line.
+
+    Args:
+        segment (dict[str, str]): The segment from the transcription.
+
+    Returns:
+        str: The formatted line
+    """
+    start = segment["start"]
+    end = segment["end"]
+    LOGGER.debug("Processing segment", start=start, end=end)
+    text = segment["text"].strip()
+    start_time = format_timestamp(seconds=start)
+    end_time = format_timestamp(seconds=end)
+    return f"[{start_time} --> {end_time}]  {text}"
+
+
+def transcribe_audio_timestamped(
+    model: whisper.Whisper,
+    media_file: MediaFile,
+    verbose: typing.Optional[bool],
+) -> TranscriptionResult:
+    """
+    Transcribes an audio file using the given Whisper model.
+
+    Args:
+        model (whisper.Whisper): The Whisper model instance used for
+            transcription.
+        media_file (MediaFile): The media file containing the audio input and
+            target output path.
+        verbose (Optional[bool]): Whether to show detailed output during
+            transcription.
+
+    Returns:
+        TranscriptionResult: Either a TranscriptionOk with the transcription
+            string, or a TranscriptionErr with the error encountered.
+    """
+    LOGGER.info(f"Transcribing media file")
+    try:
+        result = model.transcribe(
+            audio=str(media_file.audio_input),
+            language="en",
+            verbose=verbose,
+        )
+    except FileNotFoundError as err:
+        LOGGER.info("Failed to transcribe media file", err=err)
+        return TranscriptionErr(reason=err)
 
     processed_segments = (
-        process_segment(segment=segment) for segment in result["segments"]
+        format_segment(segment=segment) for segment in result["segments"]
     )
     transcription = "\n".join(processed_segments) + "\n"
     LOGGER.info("Successfully transcribed media file")
@@ -747,6 +785,10 @@ def main():
         ]
     )
 
+    transcribe = (
+        transcribe_audio_timestamped if include_timestamps else transcribe_audio
+    )
+
     unprocessed = filter_processed_media_files(
         state=state,
         media_files=media_files,
@@ -757,10 +799,9 @@ def main():
     # Transcribe media files
     for count, media_file in zip(countdown(count=5), unprocessed):
         with bound_contextvars(audio_input=media_file.audio_input):
-            transcript = transcribe_audio(
+            transcript = transcribe(
                 model=model,
                 media_file=media_file,
-                include_timestamps=include_timestamps,
                 verbose=verbose,
             )
             if isinstance(transcript, TranscriptionOk):
