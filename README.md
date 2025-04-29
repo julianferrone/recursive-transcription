@@ -1,6 +1,13 @@
 # recursive-transcription
 Recursively transcribe audio files into text.
 
+## Setup
+
+```python
+pip install structlog
+pip install -U openai-whisper
+```
+
 ## Usage
 
 This script transcribes audio files into text using the Whisper model. The command-line interface (CLI) allows you to configure various transcription options, specify file paths, and control the level of verbosity. Below are the available arguments and their descriptions:
@@ -23,25 +30,9 @@ This script transcribes audio files into text using the Whisper model. The comma
 
 ### Example Usage
 
-Transcribe audio files in a directory with timestamps:
-
-`python transcribe.py --include-timestamps /path/to/audio/files`
-
-Transcribe audio files with the large Whisper model and log progress to the console:
-
-`python transcribe.py -m large -vv /path/to/audio/files`
-
-Transcribe files, without skipping already existing transcriptions:
-
-`python transcribe.py --no-ignore-existing /path/to/audio/files`
-
-Save transcriptions to a specific directory:
-
-`python transcribe.py -t /path/to/save/transcripts /path/to/audio/files`
-
-## Requirements
-
-| Library | Explanation | Installation |
-| --- | --- | --- |
-| structlog | Structured logging library | `pip install structlog` |
-| whisper | OpenAI's speech recognition model | `pip install -U openai-whisper` |
+| Usage | Command |
+| --- | --- |
+| Transcribe audio files in a directory with timestamps | `python transcribe.py --include-timestamps /path/to/audio/files` |
+| Transcribe audio files with the large Whisper model and log progress to the console | `python transcribe.py -m large -vv /path/to/audio/files` | 
+| Transcribe files, without skipping already existing transcriptions | `python transcribe.py --no-ignore-existing /path/to/audio/files` |
+| Save transcriptions to a specific directory | `python transcribe.py -t /path/to/save/transcripts /path/to/audio/files` |
